@@ -10,7 +10,20 @@
 <body>
   <main class="shell">
     <section class="game-frame" aria-label="Echoes of the Grove game">
-      <canvas id="game" width="960" height="600" aria-label="Game canvas"></canvas>
+      <canvas id="game" aria-label="3D game canvas"></canvas>
+      <div id="hud" class="hud hidden">
+        <div><small>LIFE</small><span id="hearts"></span></div>
+        <div id="roomName" class="room-name"></div>
+        <div id="keyStatus">◇ KEY</div>
+      </div>
+      <div id="message" class="message hidden"></div>
+      <div id="overlay" class="overlay">
+        <div class="eyebrow">A TINY 3D ADVENTURE</div>
+        <h1>ECHOES<br><span>OF THE GROVE</span></h1>
+        <div class="crest">◆</div>
+        <p id="overlayText">The wild heart has been stolen.<br>Take up your blade and wake the grove.</p>
+        <button id="startButton">BEGIN QUEST</button>
+      </div>
       <div class="scanlines" aria-hidden="true"></div>
       <button id="soundButton" class="sound-button" aria-label="Toggle sound">♪ ON</button>
       <div id="touchControls" class="touch-controls" aria-label="Touch controls">
@@ -25,6 +38,7 @@
     </section>
     <div class="help"><span>MOVE <b>WASD / ARROWS</b></span><span>STRIKE <b>SPACE</b></span><span>PAUSE <b>P</b></span></div>
   </main>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
