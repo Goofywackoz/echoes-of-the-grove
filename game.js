@@ -3,13 +3,7 @@
   const $ = s => document.querySelector(s);
   const canvas=$('#game'), overlay=$('#overlay'), overlayText=$('#overlayText'), startButton=$('#startButton');
   const hud=$('#hud'), hearts=$('#hearts'), roomName=$('#roomName'), keyStatus=$('#keyStatus'), message=$('#message');
-  const keys=new Set(); let muted=false,audio,last=performance.now(),running=false,paused=false,roomIndex=0,enemies=[],shots=[],effects=[],roomGroup;
-  const rooms=[
-    {name:'WHISPERING GROVE',ground:0x4b7651,sky:0x14291f,type:'forest',count:3},
-    {name:'MOSS-COVERED RUINS',ground:0x73765e,sky:0x292f28,type:'ruins',count:4,key:true},
-    {name:'MOONLIT CROSSING',ground:0x55787b,sky:0x172e35,type:'water',count:3},
-    {name:'THE HOLLOW KEEP',ground:0x55515e,sky:0x211d29,type:'keep',count:1,boss:true}
-  ];
+  const keys=new Set(); let muted=false,audio,last=performance.now(),running=false,paused=false,roomIndex=0,enemies=[],shots=[],effects=[],roomGroup,bossSpawned=false;
   const hero={x:-7,z:0,hp:6,max:6,dir:0,inv:0,attack:0,cooldown:0,key:false,mesh:null,sword:null};
   const scene=new THREE.Scene();scene.fog=new THREE.FogExp2(0x14291f,.025);
   const camera=new THREE.PerspectiveCamera(48,16/10,.1,120);camera.position.set(0,15,18);camera.lookAt(0,0,0);
@@ -25,39 +19,49 @@
   makeHero();
   function tree(x,z,s=1){const g=new THREE.Group();g.add(mesh(geo.cyl(.2,.28,1.7,7),mat(0x59432f),0,.85,0));for(let i=0;i<3;i++)g.add(mesh(geo.cone(1.15-i*.14,1.8,7),mat(i%2?0x3d7044:0x55844b),0,1.7+i*.65,0));g.position.set(x,0,z);g.scale.setScalar(s);roomGroup.add(g);}
   function pillar(x,z,h=2.5){const g=new THREE.Group();g.add(mesh(geo.cyl(.42,.5,h,8),mat(0x85836a),0,h/2,0));g.add(mesh(geo.box(1,.25,1),mat(0x929077),0,h,0));g.position.set(x,0,z);roomGroup.add(g);}
-  function clearRoom(){if(roomGroup)scene.remove(roomGroup);enemies=[];shots=[];effects=[];roomGroup=new THREE.Group();scene.add(roomGroup);}
-  function buildRoom(index,fromRight=false){clearRoom();roomIndex=index;const r=rooms[index];scene.background=new THREE.Color(r.sky);scene.fog.color.set(r.sky);hero.x=fromRight?8:-8;hero.z=0;hero.inv=.8;hero.mesh.visible=true;
-    const ground=mesh(geo.box(22,.5,14),mat(r.ground),0,-.3,0);roomGroup.add(ground);
-    const wallMat=mat(r.type==='keep'?0x302d38:0x293c31);for(const [x,z,sx,sz] of [[0,-7,22,.6],[0,7,22,.6],[-11,0,.6,14],[11,0,.6,14]])roomGroup.add(mesh(geo.box(sx,1.4,sz),wallMat,x,.45,z));
-    if(r.type==='forest'){[[-8,-5],[-4,5],[1,-5],[6,5],[9,-4]].forEach(p=>tree(...p,.8+Math.random()*.25));}
-    if(r.type==='ruins'){[[-8,-5],[-2,5],[4,-5],[8,4]].forEach((p,i)=>pillar(...p,i%2?1.6:2.8));}
-    if(r.type==='water'){const water=mesh(geo.box(11,.08,13),new THREE.MeshPhysicalMaterial({color:0x39757d,roughness:.18,metalness:.15,transparent:true,opacity:.8}),0,.02,0);roomGroup.add(water);roomGroup.add(mesh(geo.box(3,.25,14),mat(0x8c896b),0,.12,0));}
-    if(r.type==='keep'){for(let x=-8;x<=8;x+=4){pillar(x,-5,3.2);pillar(x,5,3.2)}const altar=mesh(geo.box(3,.8,2),mat(0x392d3e),6,.4,0);roomGroup.add(altar);}
-    for(let i=0;i<r.count;i++)spawnEnemy(r.boss?5:(-2+i*2.8),(Math.random()-.5)*7,r.boss);
-    showMessage(r.name);updateHUD();
+  function clearRoom(){if(roomGroup)scene.remove(roomGroup);shots.forEach(o=>scene.remove(o));effects.forEach(o=>scene.remove(o));enemies=[];shots=[];effects=[];roomGroup=new THREE.Group();scene.add(roomGroup);}
+  function buildRoom(){clearRoom();bossSpawned=false;scene.background=new THREE.Color(0x18272d);scene.fog.color.set(0x18272d);hero.x=0;hero.z=1;hero.inv=.8;hero.mesh.visible=true;
+    // Four connected quadrants: north is negative Z on the game map.
+    const tiles=[[-7.5,-5,0xb9dce2], [7.5,-5,0x6d3029], [-7.5,5,0xd5ad62], [7.5,5,0x377f91]];
+    tiles.forEach(([x,z,c])=>roomGroup.add(mesh(geo.box(15,.5,10),mat(c),x,-.3,z)));
+    const wallMat=mat(0x27383a);for(const [x,z,sx,sz] of [[0,-10,30,.7],[0,10,30,.7],[-15,0,.7,20],[15,0,.7,20]])roomGroup.add(mesh(geo.box(sx,1.5,sz),wallMat,x,.45,z));
+    // Ice: crystal spires, snow mounds, frozen blue light.
+    [[-12,-7],[-8,-3],[-3,-8],[-12,-2]].forEach(([x,z],i)=>{const crystal=mesh(geo.cone(.65,2.2+i%2,6),new THREE.MeshStandardMaterial({color:0xbff5ff,emissive:0x255d75,emissiveIntensity:.5,roughness:.18,metalness:.15}),x,1,z);roomGroup.add(crystal);});
+    [[-10,-5],[-5,-6],[-13,-4]].forEach(([x,z])=>{const snow=mesh(geo.sphere(1.15),mat(0xe5f4ef),x,.05,z);snow.scale.y=.24;roomGroup.add(snow);});
+    // Fire: lava pools, black rocks, and a glowing volcano gate.
+    [[4,-7],[10,-3],[12,-8]].forEach(([x,z])=>{const lava=mesh(geo.cyl(1.25,1.25,.08,18),new THREE.MeshStandardMaterial({color:0xff5a20,emissive:0xff2500,emissiveIntensity:2}),x,.03,z);roomGroup.add(lava);});
+    [[3,-3],[8,-8],[13,-5]].forEach(([x,z])=>{const rock=mesh(geo.cone(.9,1.8,7),mat(0x252129),x,.85,z);roomGroup.add(rock);});
+    const fireLight=new THREE.PointLight(0xff4a20,20,13);fireLight.position.set(8,3,-5);roomGroup.add(fireLight);
+    // Sand: dunes, sandstone pillars, and an oasis marker.
+    [[-12,4],[-5,7],[-10,9]].forEach(([x,z])=>{const dune=mesh(geo.sphere(2),mat(0xe4c277),x,-.05,z);dune.scale.set(1.5,.27,.75);roomGroup.add(dune);});
+    [[-13,7],[-3,3]].forEach(([x,z],i)=>pillar(x,z,1.8+i));
+    // Water: shallow sea with stepping islands and luminous reeds.
+    const sea=mesh(geo.box(15,.12,10),new THREE.MeshPhysicalMaterial({color:0x258aa0,roughness:.12,metalness:.18,transparent:true,opacity:.82}),7.5,.04,5);roomGroup.add(sea);
+    [[3,3],[7,7],[11,4],[13,8]].forEach(([x,z])=>roomGroup.add(mesh(geo.cyl(1.1,1.25,.3,10),mat(0x6d9d78),x,.16,z)));
+    [[5,8],[10,8],[13,2]].forEach(([x,z])=>{const reed=mesh(geo.cyl(.08,.12,1.6,6),new THREE.MeshStandardMaterial({color:0x7ee6c1,emissive:0x286e61,emissiveIntensity:.7}),x,.8,z);roomGroup.add(reed);});
+    // Two guardians patrol each region. Defeating all eight summons the boss in Fire.
+    [[-10,-6],[-4,-4],[5,-7],[11,-5],[-10,4],[-4,8],[4,4],[11,7]].forEach(([x,z])=>spawnEnemy(x,z,false));
+    showMessage('THE FOURFOLD REALM');updateHUD();
   }
   function spawnEnemy(x,z,boss=false){const g=new THREE.Group();const body=mesh(boss?geo.sphere(1.25):geo.sphere(.62),mat(boss?0x78467c:0x8ab85d),0,boss?1.25:.62,0);g.add(body);if(!boss){const a=mesh(geo.cone(.24,.7,5),mat(0x8ab85d),-.35,1.18,0),b=a.clone();b.position.x=.35;g.add(a,b);}else{for(let i=0;i<7;i++){const horn=mesh(geo.cone(.2,.9,6),mat(0xb977bd),0,1.2,0);horn.rotation.z=i*Math.PI*2/7;horn.position.set(Math.cos(i*Math.PI*2/7)*1.2,1.25+Math.sin(i*Math.PI*2/7)*1.2,0);g.add(horn);}}g.position.set(x,0,z);roomGroup.add(g);enemies.push({x,z,mesh:g,r:boss?1.3:.68,hp:boss?12:roomIndex+2,max:boss?12:roomIndex+2,speed:boss?1.05:1.3+Math.random()*.45,boss,fire:1.5});}
   function showMessage(t,ms=1800){message.textContent=t;message.classList.remove('hidden');clearTimeout(showMessage.t);showMessage.t=setTimeout(()=>message.classList.add('hidden'),ms);}
-  function updateHUD(){hearts.textContent='♥'.repeat(Math.max(0,hero.hp))+'♡'.repeat(hero.max-hero.hp);roomName.textContent=rooms[roomIndex].name;keyStatus.textContent=hero.key?'◆ KEY':'◇ KEY';keyStatus.style.color=hero.key?'#e4bb5d':'';}
-  function start(){hero.hp=6;hero.key=false;hero.inv=0;running=true;paused=false;overlay.classList.add('hidden');hud.classList.remove('hidden');buildRoom(0);tone(440,.12);}
+  function updateHUD(){hearts.textContent='♥'.repeat(Math.max(0,hero.hp))+'♡'.repeat(hero.max-hero.hp);roomName.textContent='THE FOURFOLD REALM';keyStatus.textContent=bossSpawned?'FIRE LORD':'FOES '+enemies.length;keyStatus.style.color=bossSpawned?'#ff805d':'';}
+  function start(){hero.hp=6;hero.key=false;hero.inv=0;running=true;paused=false;overlay.classList.add('hidden');hud.classList.remove('hidden');buildRoom();tone(440,.12);}
   function attack(){if(!running){start();return}if(paused||hero.cooldown>0)return;hero.attack=.24;hero.cooldown=.4;hero.sword.visible=true;sound('sword');}
   function hit(a,b,r){return Math.hypot(a.x-b.x,a.z-b.z)<r;}
   function burst(x,z,color=0xe5bd61){for(let i=0;i<10;i++){const p=mesh(geo.box(.12,.12,.12),new THREE.MeshBasicMaterial({color}),x,.6,z);p.userData={vx:(Math.random()-.5)*5,vy:2+Math.random()*4,vz:(Math.random()-.5)*5,life:.6};scene.add(p);effects.push(p);}}
   function hurt(x,z){if(hero.inv>0)return;hero.hp--;hero.inv=1.1;sound('hurt');burst(hero.x,hero.z,0xc9534b);const d=Math.hypot(hero.x-x,hero.z-z)||1;hero.x+=(hero.x-x)/d;hero.z+=(hero.z-z)/d;updateHUD();if(hero.hp<=0)end(false);}
   function end(win){running=false;overlay.classList.remove('hidden');hud.classList.add('hidden');overlay.querySelector('.eyebrow').textContent=win?'THE GROVE AWAKENS':'THE LIGHT FADES';overlay.querySelector('h1').innerHTML=win?'QUEST<br><span>COMPLETE</span>':'TRY<br><span>AGAIN</span>';overlayText.innerHTML=win?'You restored the Heart of the Wild.<br>The grove sings once more.':'The Hollow claims another wanderer.<br>Rise and face the darkness again.';startButton.textContent=win?'PLAY AGAIN':'TRY AGAIN';if(win)sound('win');}
-  function roomCleared(){return enemies.length===0;}
   function update(dt){
     effects.forEach(p=>{const u=p.userData;u.life-=dt;p.position.x+=u.vx*dt;p.position.y+=u.vy*dt;p.position.z+=u.vz*dt;u.vy-=9*dt;p.scale.setScalar(Math.max(0,u.life/.6));});effects.filter(p=>p.userData.life<=0).forEach(p=>scene.remove(p));effects=effects.filter(p=>p.userData.life>0);
-    if(!running||paused)return;hero.inv-=dt;hero.attack-=dt;hero.cooldown-=dt;let dx=0,dz=0;if(keys.has('ArrowLeft')||keys.has('KeyA'))dx--;if(keys.has('ArrowRight')||keys.has('KeyD'))dx++;if(keys.has('ArrowUp')||keys.has('KeyW'))dz--;if(keys.has('ArrowDown')||keys.has('KeyS'))dz++;if(dx||dz){const l=Math.hypot(dx,dz);dx/=l;dz/=l;hero.dir=Math.atan2(dx,dz);hero.x+=dx*4.2*dt;hero.z+=dz*4.2*dt;hero.mesh.rotation.y=hero.dir;}hero.z=Math.max(-5.7,Math.min(5.7,hero.z));hero.x=Math.max(-10.2,Math.min(10.2,hero.x));
+    if(!running||paused)return;hero.inv-=dt;hero.attack-=dt;hero.cooldown-=dt;let dx=0,dz=0;if(keys.has('ArrowLeft')||keys.has('KeyA'))dx--;if(keys.has('ArrowRight')||keys.has('KeyD'))dx++;if(keys.has('ArrowUp')||keys.has('KeyW'))dz--;if(keys.has('ArrowDown')||keys.has('KeyS'))dz++;if(dx||dz){const l=Math.hypot(dx,dz);dx/=l;dz/=l;hero.dir=Math.atan2(dx,dz);hero.x+=dx*4.2*dt;hero.z+=dz*4.2*dt;hero.mesh.rotation.y=hero.dir;}hero.z=Math.max(-8.8,Math.min(8.8,hero.z));hero.x=Math.max(-13.8,Math.min(13.8,hero.x));
     hero.mesh.position.set(hero.x,0,hero.z);hero.mesh.visible=hero.inv<=0||Math.floor(hero.inv*12)%2===0;if(hero.attack>0){hero.sword.visible=true;hero.sword.rotation.y=-1.5+hero.attack*10;const sx=hero.x+Math.sin(hero.dir)*1.2,sz=hero.z+Math.cos(hero.dir)*1.2;enemies.forEach(e=>{if(!e.hit&&hit({x:sx,z:sz},e,1.25+e.r)){e.hp--;e.hit=.25;burst(e.x,e.z);e.mesh.scale.setScalar(.8);}});}else hero.sword.visible=false;
     enemies.forEach(e=>{e.hit=Math.max(0,(e.hit||0)-dt);if(!e.hit)e.mesh.scale.lerp(new THREE.Vector3(1,1,1),dt*9);const dx=hero.x-e.x,dz=hero.z-e.z,d=Math.hypot(dx,dz)||1;e.x+=dx/d*e.speed*dt;e.z+=dz/d*e.speed*dt;e.mesh.position.x=e.x;e.mesh.position.z=e.z;e.mesh.rotation.y=Math.atan2(dx,dz);if(hit(hero,e,e.r+.48))hurt(e.x,e.z);if(e.boss){e.fire-=dt;if(e.fire<0){e.fire=2.2;for(let i=0;i<8;i++){const a=i*Math.PI/4;const s=mesh(geo.sphere(.16),new THREE.MeshBasicMaterial({color:0xd285df}),e.x,1,e.z);s.userData={vx:Math.cos(a)*3.2,vz:Math.sin(a)*3.2,life:4};scene.add(s);shots.push(s);}tone(90,.18,'sawtooth');}}});
-    const dead=enemies.filter(e=>e.hp<=0);dead.forEach(e=>{burst(e.x,e.z,e.boss?0xd285df:0x9bc76b);roomGroup.remove(e.mesh);if(e.boss)end(true);});enemies=enemies.filter(e=>e.hp>0);
+    const dead=enemies.filter(e=>e.hp<=0);dead.forEach(e=>{burst(e.x,e.z,e.boss?0xd285df:0x9bc76b);roomGroup.remove(e.mesh);if(e.boss)end(true);});enemies=enemies.filter(e=>e.hp>0);if(dead.length)updateHUD();
     shots.forEach(s=>{s.userData.life-=dt;s.position.x+=s.userData.vx*dt;s.position.z+=s.userData.vz*dt;if(hit(hero,{x:s.position.x,z:s.position.z},.55)){hurt(s.position.x,s.position.z);s.userData.life=0;}});shots.filter(s=>s.userData.life<=0).forEach(s=>scene.remove(s));shots=shots.filter(s=>s.userData.life>0);
-    if(roomCleared()&&rooms[roomIndex].key&&!hero.key&&Math.hypot(hero.x,hero.z)<1.1){hero.key=true;sound('coin');showMessage('RUIN KEY FOUND');burst(0,0,0xf0d064);updateHUD();}
-    if(roomCleared()&&hero.x>9.8&&roomIndex<3){if(roomIndex===1&&!hero.key){hero.x=9.2;showMessage('THE WAY IS SEALED')}else buildRoom(roomIndex+1);}
-    if(roomCleared()&&hero.x<-9.8&&roomIndex>0)buildRoom(roomIndex-1,true);
-    if(roomCleared()&&rooms[roomIndex].key&&!hero.key){const t=performance.now()*.003;heroKey.visible=true;heroKey.position.set(0,.8+Math.sin(t)*.2,0);heroKey.rotation.y=t;}else heroKey.visible=false;
-    const target=new THREE.Vector3(hero.x*.18,0,hero.z*.12);camera.position.x+=(target.x-camera.position.x)*dt*2.5;camera.position.z+=(18+target.z-camera.position.z)*dt*2.5;camera.lookAt(target.x,0,target.z);
+    if(!enemies.length&&!bossSpawned&&running){bossSpawned=true;spawnEnemy(8,-5,true);showMessage('THE FIRE LORD AWAKENS',2400);tone(90,.3,'sawtooth',.06);updateHUD();}
+    heroKey.visible=false;
+    const target=new THREE.Vector3(hero.x*.25,0,hero.z*.2);camera.position.x+=(target.x-camera.position.x)*dt*2.5;camera.position.y+=(19-camera.position.y)*dt*2;camera.position.z+=(24+target.z-camera.position.z)*dt*2.5;camera.lookAt(target.x,0,target.z);
   }
   const heroKey=new THREE.Group();const kg=mesh(geo.box(.25,.25,1.1),mat(0xe7bd5d,.3,.7));kg.rotation.z=Math.PI/2;heroKey.add(kg,mesh(geo.cyl(.34,.34,.12,12),mat(0xe7bd5d,.3,.7),-.65,0,0));heroKey.rotation.x=Math.PI/2;scene.add(heroKey);heroKey.visible=false;
   function resize(){const r=canvas.parentElement.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix();}
