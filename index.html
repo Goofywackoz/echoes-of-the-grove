@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#101b19" />
+  <title>Echoes of the Grove</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="game-frame" aria-label="Echoes of the Grove game">
+      <canvas id="game" width="960" height="600" aria-label="Game canvas"></canvas>
+      <div class="scanlines" aria-hidden="true"></div>
+      <button id="soundButton" class="sound-button" aria-label="Toggle sound">♪ ON</button>
+      <div id="touchControls" class="touch-controls" aria-label="Touch controls">
+        <div class="dpad">
+          <button data-key="ArrowUp" class="up" aria-label="Move up">▲</button>
+          <button data-key="ArrowLeft" class="left" aria-label="Move left">◀</button>
+          <button data-key="ArrowDown" class="down" aria-label="Move down">▼</button>
+          <button data-key="ArrowRight" class="right" aria-label="Move right">▶</button>
+        </div>
+        <button data-key="Space" class="action" aria-label="Attack">A</button>
+      </div>
+    </section>
+    <div class="help"><span>MOVE <b>WASD / ARROWS</b></span><span>STRIKE <b>SPACE</b></span><span>PAUSE <b>P</b></span></div>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
